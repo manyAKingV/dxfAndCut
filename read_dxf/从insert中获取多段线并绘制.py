@@ -15,6 +15,7 @@ def deal_line(polyline,name):
             points.extend(e.points)
 
     # TODO 去掉内部线
+    # TODO 获取 裁片实际大小
     # 首尾相连
     points.append((points[0][0],points[0][1]))
     save_to_folder.painting_line(points,name)
@@ -43,5 +44,5 @@ def polyline_to_png(dxf_file):
 
 
 if __name__ == "__main__":
-    dxf_file = "test01.dxf"
+    dxf_file = "1741602961191.dxf"
     polyline_to_png(dxf_file)
