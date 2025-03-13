@@ -3,6 +3,10 @@ import numpy as np
 from PIL import Image
 import time
 
+"""
+    以实现功能：按每列最大width进行排料
+"""
+
 # 允许处理大尺寸图片
 Image.MAX_IMAGE_PIXELS = None
 

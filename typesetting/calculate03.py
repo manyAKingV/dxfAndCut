@@ -13,37 +13,30 @@ RESOLUTION = int(DPI * FABRIC_WIDTH / 2.54)
 
 
 def crop_cutpart(img_array):
-    height, width = img_array.shape[:2]
-    # 初始化边界
-    min_x = width
-    min_y = height
-    max_x = 0
-    max_y = 0
-    # 遍历像素找边界
-    for y in range(height):
-        for x in range(width):
-            if len(img_array.shape) == 3 and img_array.shape[2] in [3, 4]:
-                if not np.all(img_array[y, x, :3] == 255):
-                    min_x = min(min_x, x)
-                    min_y = min(min_y, y)
-                    max_x = max(max_x, x)
-                    max_y = max(max_y, y)
-            elif len(img_array.shape) == 2:
-                if img_array[y, x] != 255:
-                    min_x = min(min_x, x)
-                    min_y = min(min_y, y)
-                    max_x = max(max_x, x)
-                    max_y = max(max_y, y)
+    """
+    裁剪图片数组，去除空白边缘
+    :param img_array: 输入的图片数组
+    :return: 裁剪后的数组、宽度和高度
+    """
+    if len(img_array.shape) == 3 and img_array.shape[2] in [3, 4]:
+        # 找到非白色像素的位置
+        non_white = np.argwhere(np.any(img_array[:, :, :3] != 255, axis=2))
+    else:
+        non_white = np.argwhere(img_array != 255)
 
-    # 根据边界裁剪数组
+    if non_white.size == 0:
+        return img_array, 0, 0
+
+    min_y, min_x = non_white.min(axis=0)
+    max_y, max_x = non_white.max(axis=0)
+
     if len(img_array.shape) == 3 and img_array.shape[2] in [3, 4]:
         cropped_array = img_array[min_y:max_y + 1, min_x:max_x + 1, :]
     else:
         cropped_array = img_array[min_y:max_y + 1, min_x:max_x + 1]
-    # 记录裁剪后的宽高
+
     cropped_height, cropped_width = cropped_array.shape[:2]
     return cropped_array, cropped_width, cropped_height
-
 
 
 def stitch_images(image_folder, output_path):
@@ -57,14 +50,8 @@ def stitch_images(image_folder, output_path):
         print(f"文件夹 {image_folder} 不存在。")
         return
 
-    result_array = None
-    current_width = 0
-
-    # 边界点
-    w_start = 0
-    h_start = 0
-    last_start_w = 0
-
+    # 存储处理后的图片数组及其宽度
+    processed_images = []
 
     # 遍历文件夹中的所有 PNG 图片
     for filename in os.listdir(image_folder):
@@ -73,43 +60,47 @@ def stitch_images(image_folder, output_path):
             try:
                 # 打开图片并转换为 NumPy 数组
                 with Image.open(file_path) as img:
+                    width, height = img.size
+                    new_width = int(width * 2.8)
+                    new_height = int(height * 2.8)
+                    img = img.resize((new_width, new_height), Image.LANCZOS)
+                    img = img.rotate(90, expand=True)
                     img_array = np.array(img)
                     # 处理裁片
-                    img_array,width,height = crop_cutpart(img_array)
-
-                    # 若 result_array 未初始化，根据当前图片初始化
-                    if result_array is None:
-                        result_array = np.zeros((RESOLUTION, width, 4), dtype=np.uint8)
-                    # TODO 计算保存位置
-                    if RESOLUTION-h_start > height:
-                        # 说明可以放置
-                        result_array[h_start:h_start+height, w_start:last_start_w+width, :] = img_array
-                        h_start += height
-                        if w_start < width:
-                            w_start = width
-                    else:
-                        # 看是否超出w范围  如果超出范围则创建一个新数组，并将原数组中的数据转移
-                        if w_start + width > result_array.shape[1]:
-                            new_width = w_start + width
-                            new_result_array = np.zeros((RESOLUTION, new_width, 4), dtype=np.uint8)
-                            new_result_array[:result_array.shape[0], :result_array.shape[1], :] = result_array
-                            result_array = new_result_array
-                        # 放置
-                        result_array[:height, w_start:w_start+width, :] = img_array
-                        h_start += height
-                        last_start_w = w_start - width
-
-
-                    # 拼接当前图片到 result_array
-                    result_array[:height, current_width:current_width + width, :] = img_array
-                    current_width += width
-                    print(f"计算完成一个,{filename}")
-
+                    img_array, width, height = crop_cutpart(img_array)
+                    print(f"{filename} _width {width} _height {height}")
+                    processed_images.append((img_array, width, height, filename))
             except Exception as e:
                 print(f"处理文件 {filename} 时出现错误: {e}")
 
+    # 按宽度从大到小排序
+    processed_images.sort(key=lambda x: x[1], reverse=True)
+
+    result_array = np.zeros((RESOLUTION, 0, 4), dtype=np.uint8)
+    current_x = 0
+    current_y = 0
+
+    # 依次拼接排序后的图片
+    for img_array, width, height, filename in processed_images:
+        # 检查是否需要换行
+        if current_y + height > RESOLUTION:
+            current_x = result_array.shape[1]
+            current_y = 0
+
+        # 检查是否需要扩展结果数组的宽度
+        if current_x + width > result_array.shape[1]:
+            new_width = current_x + width
+            new_result_array = np.zeros((RESOLUTION, new_width, 4), dtype=np.uint8)
+            new_result_array[:, :result_array.shape[1], :] = result_array
+            result_array = new_result_array
+
+        # 拼接当前图片到 result_array
+        result_array[current_y:current_y + height, current_x:current_x + width, :] = img_array
+        current_y += height
+        print(f"计算完成一个,{filename}")
+
     # 若有图片被处理，将无颜色部分设置为白色并保存拼接后的图片
-    if result_array is not None:
+    if result_array.shape[1] > 0:
         # 将无颜色部分（像素值为 0）设置为白色
         result_array[np.all(result_array[:, :, :3] == 0, axis=2)] = [255, 255, 255, 255]
 
