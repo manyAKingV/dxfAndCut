@@ -1,12 +1,7 @@
 import os
-import torch  # 12.4
 import numpy as np
 from PIL import Image
 import time
-
-"""
-    使用GPU进行计算反而降低了计算速度
-"""
 
 # 允许处理大尺寸图片
 Image.MAX_IMAGE_PIXELS = None
@@ -18,41 +13,34 @@ RESOLUTION = int(DPI * FABRIC_WIDTH / 2.54)
 
 
 def crop_cutpart(img_array):
-    # 将 NumPy 数组转换为 PyTorch 张量并移动到 GPU 上
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    img_tensor = torch.from_numpy(img_array).to(device)
-    height, width = img_tensor.shape[:2]
-
+    height, width = img_array.shape[:2]
     # 初始化边界
     min_x = width
     min_y = height
     max_x = 0
     max_y = 0
-
     # 遍历像素找边界
     for y in range(height):
         for x in range(width):
-            if img_tensor.dim() == 3 and img_tensor.shape[2] in [3, 4]:
-                if not torch.all(img_tensor[y, x, :3] == 255):
+            if len(img_array.shape) == 3 and img_array.shape[2] in [3, 4]:
+                if not np.all(img_array[y, x, :3] == 255):
                     min_x = min(min_x, x)
                     min_y = min(min_y, y)
                     max_x = max(max_x, x)
                     max_y = max(max_y, y)
-            elif img_tensor.dim() == 2:
-                if img_tensor[y, x] != 255:
+            elif len(img_array.shape) == 2:
+                if img_array[y, x] != 255:
                     min_x = min(min_x, x)
                     min_y = min(min_y, y)
                     max_x = max(max_x, x)
                     max_y = max(max_y, y)
 
     # 根据边界裁剪数组
-    if img_tensor.dim() == 3 and img_tensor.shape[2] in [3, 4]:
-        cropped_tensor = img_tensor[min_y:max_y + 1, min_x:max_x + 1, :]
+    if len(img_array.shape) == 3 and img_array.shape[2] in [3, 4]:
+        cropped_array = img_array[min_y:max_y + 1, min_x:max_x + 1, :]
     else:
-        cropped_tensor = img_tensor[min_y:max_y + 1, min_x:max_x + 1]
-
-    # 将裁剪后的张量转换回 NumPy 数组
-    cropped_array = cropped_tensor.cpu().numpy()
+        cropped_array = img_array[min_y:max_y + 1, min_x:max_x + 1]
+    # 记录裁剪后的宽高
     cropped_height, cropped_width = cropped_array.shape[:2]
     return cropped_array, cropped_width, cropped_height
 
@@ -71,7 +59,12 @@ def stitch_images(image_folder, output_path):
 
     result_array = None
     current_width = 0
-    max_height = 0
+
+    # 边界点
+    w_start = 0
+    h_start = 0
+    last_start_w = 0
+
 
     # 遍历文件夹中的所有 PNG 图片
     for filename in os.listdir(image_folder):
@@ -83,17 +76,29 @@ def stitch_images(image_folder, output_path):
                     img_array = np.array(img)
                     # 处理裁片
                     img_array,width,height = crop_cutpart(img_array)
-                    max_height = max(max_height, height)
 
                     # 若 result_array 未初始化，根据当前图片初始化
                     if result_array is None:
-                        result_array = np.zeros((height, width, 4), dtype=np.uint8)
-                    # 若当前图片会超出 result_array 宽度，扩展 result_array
-                    elif current_width + width > result_array.shape[1]:
-                        new_width = current_width + width
-                        new_result_array = np.zeros((max_height, new_width, 4), dtype=np.uint8)
-                        new_result_array[:result_array.shape[0], :result_array.shape[1], :] = result_array
-                        result_array = new_result_array
+                        result_array = np.zeros((RESOLUTION, width, 4), dtype=np.uint8)
+                    # TODO 计算保存位置
+                    if RESOLUTION-h_start > height:
+                        # 说明可以放置
+                        result_array[h_start:h_start+height, w_start:last_start_w+width, :] = img_array
+                        h_start += height
+                        if w_start < width:
+                            w_start = width
+                    else:
+                        # 看是否超出w范围  如果超出范围则创建一个新数组，并将原数组中的数据转移
+                        if w_start + width > result_array.shape[1]:
+                            new_width = w_start + width
+                            new_result_array = np.zeros((RESOLUTION, new_width, 4), dtype=np.uint8)
+                            new_result_array[:result_array.shape[0], :result_array.shape[1], :] = result_array
+                            result_array = new_result_array
+                        # 放置
+                        result_array[:height, w_start:w_start+width, :] = img_array
+                        h_start += height
+                        last_start_w = w_start - width
+
 
                     # 拼接当前图片到 result_array
                     result_array[:height, current_width:current_width + width, :] = img_array
