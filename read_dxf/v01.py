@@ -86,7 +86,7 @@ def process_entity(entity, insert_x, insert_y, scale_x, scale_y):
     """处理单个实体并返回变换后的线段列表，去除旋转逻辑"""
     lines = []
 
-    if entity.dxftype in ['LWPOLYLINE', 'POLYLINE']:
+    if entity.dxftype in ['POLYLINE']:
         vertices = []
         # 处理多段线顶点
         points = getattr(entity, 'points', [])
@@ -96,7 +96,9 @@ def process_entity(entity, insert_x, insert_y, scale_x, scale_y):
             transformed = transform_point(pt[:2], insert_x, insert_y, scale_x, scale_y)
             vertices.append(transformed)
         # 闭合处理
-        if getattr(entity, 'closed', False) and len(vertices) > 1:
+        is_close = False
+        is_close = (entity.flags & 1)
+        if is_close and len(vertices) > 1:
             vertices.append(vertices[0])
         if vertices:
             lines.append(vertices)
