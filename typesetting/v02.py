@@ -3,6 +3,10 @@ import numpy as np
 from PIL import Image
 import time
 
+"""
+    在v1的基础上，通过从大到小对裁片的原高度进行排列，实现排版的优化
+"""
+
 # 允许处理大尺寸图片
 Image.MAX_IMAGE_PIXELS = None
 
