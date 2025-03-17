@@ -1,21 +1,32 @@
 import dxfgrabber
-import matplotlib.pyplot as plt
-import os
 import save_to_folder
-
+import re
+# 目前dxf换算png v01版本
 
 # 设置点
 def deal_line(polyline,name):
     print(f"开始绘制: {name}")
+    pattern = r'^BoundingBox_-\d+$'
+    if re.match(pattern, name):
+        return
     # plt.figure()
     # 获取多段线的顶点
     points = []
+    # for e in polyline:
+    #     if e.dxftype == "POINT":
+    #         point = [e.point[0], e.point[1]]
+    #         points.append(point)
+    #
+    # # TODO 去掉内部线
+    # # 首尾相连
+    # points.append([points[0][0],points[0][1]])
+    # save_to_folder.painting_line(points,name)
+
     for e in polyline:
         if e.dxftype == "POLYLINE":
             points.extend(e.points)
 
     # TODO 去掉内部线
-    # TODO 获取 裁片实际大小
     # 首尾相连
     points.append((points[0][0],points[0][1]))
     save_to_folder.painting_line(points,name)
