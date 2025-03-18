@@ -16,31 +16,35 @@ FABRIC_WIDTH = 140
 RESOLUTION = int(DPI * FABRIC_WIDTH / 2.54)
 
 
-def crop_cutpart(img_array):
+def crop_and_return_numpy(img_array, crop_box=None):
     """
-    裁剪图片数组，去除空白边缘
-    :param img_array: 输入的图片数组
-    :return: 裁剪后的数组、宽度和高度
+    裁剪图像数组并返回Numpy数组
+    :param img_array: 输入的Numpy数组（支持H×W×C格式）
+    :param crop_box: 裁剪区域元组（left, upper, right, lower），若为None则自动检测非透明区域
+    :return: 裁剪后的Numpy数组、裁剪宽度和高度
     """
-    if len(img_array.shape) == 3 and img_array.shape[2] in [3, 4]:
-        # 找到非白色像素的位置
-        non_white = np.argwhere(np.any(img_array[:, :, :3] != 255, axis=2))
-    else:
-        non_white = np.argwhere(img_array != 255)
+    # 自动检测非透明区域（针对RGBA图像）
+    if crop_box is None:
+        if len(img_array.shape) == 3 and img_array.shape[2] == 4:
+            alpha = img_array[:, :, 3]
+            non_zero = np.argwhere(alpha > 0)
+            if non_zero.size == 0:
+                return np.array([]), 0, 0
+            min_y, min_x = non_zero.min(axis=0)
+            max_y, max_x = non_zero.max(axis=0)
+            crop_box = (min_x, min_y, max_x + 1, max_y + 1)
+        else:
+            # 非透明图像直接返回原尺寸
+            return img_array, img_array.shape[1], img_array.shape[0]
 
-    if non_white.size == 0:
-        return img_array, 0, 0
+    # 转换为PIL图像进行精确裁剪[6,7](@ref)
+    pil_image = Image.fromarray(img_array)
+    cropped_image = pil_image.crop(crop_box)
 
-    min_y, min_x = non_white.min(axis=0)
-    max_y, max_x = non_white.max(axis=0)
-
-    if len(img_array.shape) == 3 and img_array.shape[2] in [3, 4]:
-        cropped_array = img_array[min_y:max_y + 1, min_x:max_x + 1, :]
-    else:
-        cropped_array = img_array[min_y:max_y + 1, min_x:max_x + 1]
-
-    cropped_height, cropped_width = cropped_array.shape[:2]
-    return cropped_array, cropped_width, cropped_height
+    # 返回Numpy数组及尺寸[7,8](@ref)
+    cropped_array = np.array(cropped_image)
+    height, width = cropped_array.shape[:2]
+    return cropped_array, width, height
 
 
 def stitch_images(image_folder, output_path):
@@ -71,7 +75,7 @@ def stitch_images(image_folder, output_path):
                     img = img.rotate(90, expand=True)
                     img_array = np.array(img)
                     # 处理裁片
-                    img_array, width, height = crop_cutpart(img_array)
+                    img_array, width, height = crop_and_return_numpy(img_array)
                     print(f"{filename} _width {width} _height {height}")
                     processed_images.append((img_array, width, height, filename))
             except Exception as e:
@@ -117,7 +121,7 @@ def stitch_images(image_folder, output_path):
 
 
 if __name__ == "__main__":
-    image_folder = 'create_png'  # 替换为实际的图片文件夹路径
+    image_folder = 'gender_png'  # 替换为实际的图片文件夹路径
     output_path = 'output.png'  # 替换为实际的输出图片路径
     start_time = time.time()
     stitch_images(image_folder, output_path)
